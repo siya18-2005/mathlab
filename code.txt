@@ -1,0 +1,57 @@
+% Load the PhysioNet ECG data
+data = load('01911m.mat');
+signal = double(data.val(1, :));  % First ECG channel
+
+fs = 250;  % Sampling frequency (adjust if needed)
+
+%% 1. Plot Original ECG
+figure;
+subplot(2,1,1);
+plot(signal);
+title('Original ECG Signal');
+xlabel('Sample'); ylabel('Amplitude');
+
+%% 2. Denoising (Median filter to remove baseline)
+baseline = medfilt1(signal, fs);  % ~1 second
+ecg_detrended = signal - baseline;
+
+%% 3. Bandpass Filtering (0.5–45 Hz)
+[b, a] = butter(4, [0.5 45]/(fs/2), 'bandpass');
+ecg_clean = filtfilt(b, a, ecg_detrended);
+
+% Plot Cleaned Signal
+subplot(2,1,2);
+plot(ecg_clean);
+title('Cleaned ECG Signal (Baseline + Bandpass Filtered)');
+xlabel('Sample'); ylabel('Amplitude');
+
+%% 4. R-Peak Detection
+[~, locs_R] = findpeaks(ecg_clean, ...
+    'MinPeakHeight', mean(ecg_clean) + std(ecg_clean), ...
+    'MinPeakDistance', round(0.6 * fs));  % ~60 BPM
+
+% Overlay R-peaks on cleaned signal
+hold on;
+plot(locs_R, ecg_clean(locs_R), 'ro');
+legend('Cleaned ECG', 'R-peaks');
+
+%% 5. Heart Rate and Risk Assessment
+RR_intervals = diff(locs_R) / fs;  % seconds
+HR = 60 ./ RR_intervals;  % in BPM
+
+mean_HR = mean(HR);
+std_HR = std(HR);
+
+% Basic health assessment
+if mean_HR < 50
+    status = 'Bradycardia (slow heart rate)';
+elseif mean_HR > 100
+    status = 'Tachycardia (fast heart rate)';
+elseif std_HR > 10
+    status = 'Irregular rhythm detected — possible arrhythmia';
+else
+    status = 'Normal sinus rhythm';
+end
+
+% Display result
+fprintf('Mean HR: %.2f bpm | STD: %.2f bpm → Assessment: %s\n', mean_HR, std_HR, status);
